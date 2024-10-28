@@ -1,26 +1,31 @@
 use std::num::Wrapping;
 
 pub fn calculate_swap_amount(token_a_amount: u64, token_b_amount: u64, input_amount: u64) -> u64 {
-    // Implement dynamic rate adjustment logic here
     let rate_adjustment = calculate_rate_adjustment(token_a_amount, token_b_amount);
     let k = Wrapping(token_a_amount) * Wrapping(token_b_amount);
     let input_amount_wrapping = Wrapping(input_amount) * Wrapping(rate_adjustment);
 
-    // Simple x * y = k calculation
-    let output_amount =
+    let output_amount = 
         Wrapping(token_b_amount) - (k / (Wrapping(token_a_amount) + input_amount_wrapping));
+    
+    // Debug statements for tracking values
+    println!("Token A Reserve: {}, Token B Reserve: {}", token_a_amount, token_b_amount);
+    println!("Input Amount: {}, Rate Adjustment: {}", input_amount, rate_adjustment);
+    println!("Constant Product (k): {}", k.0);
+    println!("Output Amount: {}", output_amount.0);
+
     output_amount.0
 }
 
 fn calculate_rate_adjustment(token_a_amount: u64, token_b_amount: u64) -> u64 {
     if token_a_amount > token_b_amount {
-        let excess = token_a_amount - token_b_amount;
-        1 + excess / token_b_amount // Increasing multiplier based on the excess proportion
+        let excess = token_a_amount.saturating_sub(token_b_amount);
+        1 + (excess / token_b_amount).min(10)  // Limit rate adjustment to avoid excessive values
     } else if token_a_amount < token_b_amount {
-        let shortage = token_b_amount - token_a_amount;
-        1 + shortage / token_a_amount // Increasing multiplier based on the shortage proportion
+        let shortage = token_b_amount.saturating_sub(token_a_amount);
+        1 + (shortage / token_a_amount).min(10) // Limit rate adjustment similarly
     } else {
-        1 // No adjustment if amounts are equal
+        1
     }
 }
 
@@ -30,18 +35,44 @@ mod tests {
 
     #[test]
     fn test_calculate_swap_amount() {
-        //  input values
+        // Test case 1: Balanced pool with small swap impact
+        let token_a_reserve = 2000;
+        let token_b_reserve = 2000;
+        let input_amount = 100;
+
+        let output = calculate_swap_amount(token_a_reserve, token_b_reserve, input_amount);
+        assert_eq!(output, 96);
+
+        // Test case 2: Unbalanced pool favoring token_a
+        let token_a_reserve = 3000;
+        let token_b_reserve = 1000;
+        let input_amount = 100;
+
+        let output = calculate_swap_amount(token_a_reserve, token_b_reserve, input_amount);
+        assert_eq!(output, 91);
+
+        // Test case 3: Large swap impact on a balanced pool
         let token_a_reserve = 1000;
         let token_b_reserve = 1000;
-        let token_a_amount = 100;
+        let input_amount = 500;
 
-        // Expected output (this should be calculated based on the logic of your function)
-        let expected_token_b_amount = 90; // Replace with the correct expected value
+        let output = calculate_swap_amount(token_a_reserve, token_b_reserve, input_amount);
+        assert_eq!(output, 334);
 
-        // Call the function
-        let result = calculate_swap_amount(token_a_reserve, token_b_reserve, token_a_amount);
+        // Test case 4: Minimal swap impact on a large pool
+        let token_a_reserve = 10000;
+        let token_b_reserve = 10000;
+        let input_amount = 10;
 
-        // Assert that the result is as expected
-        assert_eq!(result, expected_token_b_amount);
+        let output = calculate_swap_amount(token_a_reserve, token_b_reserve, input_amount);
+        assert_eq!(output, 10);
+
+        // Test case 5: Unbalanced pool favoring token_b
+        let token_a_reserve = 1000;
+        let token_b_reserve = 3000;
+        let input_amount = 100;
+
+        let output = calculate_swap_amount(token_a_reserve, token_b_reserve, input_amount);
+        assert_eq!(output, 114);
     }
 }
