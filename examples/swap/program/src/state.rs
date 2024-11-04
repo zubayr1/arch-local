@@ -12,7 +12,15 @@ pub struct LiquidityParams {
 impl LiquidityParams {
     pub fn new() -> Self {
         LiquidityParams {
+
             token_amounts: HashMap::new(),
+
+            liquidity_amount: initial_token_a + initial_token_b, 
+            token_a: Pubkey::from_slice(&[0; 32]),                     
+            token_b: Pubkey::from_slice(&[1; 32]),                     
+            token_a_amount: initial_token_a,
+            token_b_amount: initial_token_b,
+
             yield_accumulated: 0,
             last_yield_update_time: 0,
         }

@@ -1,10 +1,12 @@
+use arch_program::pubkey::Pubkey;
 use arch_program::{account::AccountInfo, program_error::ProgramError};
+use borsh::BorshDeserialize;
+use borsh::BorshSerialize;
 
 use crate::calculate_swap_amount;
 pub use crate::LiquidityParams;
 pub use crate::RewardParams;
-pub use crate::vault::Vault;
-
+pub use crate::state::Vault;
 pub fn add_liquidity(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
@@ -25,6 +27,7 @@ pub fn remove_liquidity(
     token_address: Pubkey,
     amount: u64,
 ) -> Result<(), ProgramError> {
+
     let token_amount = liquidity_params.token_amounts.entry(token_address).or_insert(0);
     if *token_amount < amount {
         return Err(ProgramError::Custom(507)); // Insufficient liquidity
@@ -33,6 +36,28 @@ pub fn remove_liquidity(
     // Serialize updated liquidity params back to account data
     let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
     liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
+
+    update_yield(liquidity_params, current_time)?;
+
+    let mut liquidity_data = liquidity_account
+        .data
+        .try_borrow_mut()
+        .map_err(|_| ProgramError::Custom(502))?;
+
+    liquidity_params.token_a_amount = liquidity_params
+        .token_a_amount
+        .saturating_sub(token_a_amount);
+    liquidity_params.token_b_amount = liquidity_params
+        .token_b_amount
+        .saturating_sub(token_b_amount);
+
+    liquidity_params.liquidity_amount = 
+        liquidity_params.token_a_amount + liquidity_params.token_b_amount;
+
+    let serialized_data = 
+        borsh::to_vec(liquidity_params).map_err(|_| ProgramError::Custom(503))?;
+    liquidity_data.copy_from_slice(&serialized_data);
+
 
     Ok(())
 }
@@ -44,6 +69,7 @@ pub fn swap_tokens(
     token_out_address: Pubkey,
     amount: u64,
 ) -> Result<(), ProgramError> {
+
     let token_in_amount = liquidity_params.token_amounts.entry(token_in_address).or_insert(0);
     let token_out_amount = liquidity_params.token_amounts.entry(token_out_address).or_insert(0);
 
@@ -58,6 +84,34 @@ pub fn swap_tokens(
     // Serialize updated liquidity params back to account data
     let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(504))?;
     liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
+
+    Ok(())
+}
+
+
+    let mut liquidity_data = liquidity_account
+        .data
+        .try_borrow_mut()
+        .map_err(|_| ProgramError::Custom(502))?;
+
+    let token_b_amount = calculate_swap_amount(
+        liquidity_params.token_a_amount,
+        liquidity_params.token_b_amount,
+        token_a_amount,
+    );
+
+    if token_b_amount < min_token_b_amount {
+        return Err(ProgramError::Custom(503));
+    }
+
+    liquidity_params.token_a_amount += token_a_amount;
+    liquidity_params.token_b_amount -= token_b_amount;
+    liquidity_params.liquidity_amount = 
+        liquidity_params.token_a_amount + liquidity_params.token_b_amount;
+
+    let serialized_data = 
+        borsh::to_vec(liquidity_params).map_err(|_| ProgramError::Custom(504))?;
+    liquidity_data.copy_from_slice(&serialized_data);
 
     Ok(())
 }
@@ -204,7 +258,31 @@ pub fn withdraw_liquidity(
     Ok(())
 }
 
-// Function to execute matching limit orders
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct LimitOrder {
+    pub owner: Pubkey,
+    pub token_pair: (Pubkey, Pubkey),
+    pub amount: u64,
+    pub price: u64,
+    pub order_type: OrderType,
+    pub status: OrderStatus,
+}
+
+
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub enum OrderStatus {
+    Open,
+    Executed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+pub enum OrderType {
+    Buy,
+    Sell,
+}
+
 pub fn execute_limit_orders(
     orders: &mut [LimitOrder],
     current_market_prices: &[(Pubkey, Pubkey, u64)],
@@ -230,27 +308,4 @@ pub fn update_yield(liquidity_params: &mut LiquidityParams, current_time: u64) -
     liquidity_params.last_yield_update_time = current_time;
 
     Ok(())
-}
-
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct LimitOrder {
-    pub owner: Pubkey,
-    pub token_pair: (Pubkey, Pubkey),
-    pub amount: u64,
-    pub price: u64,
-    pub order_type: OrderType,
-    pub status: OrderStatus,
-}
-
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub enum OrderType {
-    Buy,
-    Sell,
-}
-
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub enum OrderStatus {
-    Open,
-    Executed,
-    Cancelled,
 }
