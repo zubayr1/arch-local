@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::state::{LiquidityParams, Vault};
 use crate::curve::calculate_swap_amount;
 use arch_program::{program_error::ProgramError, pubkey::Pubkey};
@@ -12,7 +13,8 @@ impl<'a> TradingRoute<'a> {
     pub fn calculate_best_route(
         &self,
         input_amount: u64,
-        desired_output_token: Pubkey,
+        input_token: Pubkey,
+        output_token: Pubkey,
     ) -> Result<u64, ProgramError> {
         let mut total_output_amount = 0;
         let mut remaining_input = input_amount;
@@ -20,15 +22,12 @@ impl<'a> TradingRoute<'a> {
         for vault in &self.vaults {
             if remaining_input == 0 { break; }
 
-            let output_amount = calculate_swap_amount(
-                vault.token_a_amount,
-                vault.token_b_amount,
-                remaining_input,
-            );
-
-            if vault.token_b == desired_output_token {
-                total_output_amount += output_amount;
-                remaining_input -= output_amount;
+            if let Some(&input_amount) = vault.token_amounts.get(&input_token) {
+                if let Some(&output_amount) = vault.token_amounts.get(&output_token) {
+                    let swap_amount = calculate_swap_amount(input_amount, output_amount, remaining_input);
+                    total_output_amount += swap_amount;
+                    remaining_input -= swap_amount;
+                }
             }
         }
 

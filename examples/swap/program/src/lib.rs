@@ -50,42 +50,38 @@ pub fn process_instruction(
 
     match instruction {
         LiquidityInstruction::AddLiquidity {
-            token_a_amount,
-            token_b_amount,
+            token_address,
+            amount,
         } => {
             add_liquidity(
                 &liquidity_account,
                 &mut liquidity_params,
-                token_a_amount,
-                token_b_amount,
+                token_address,
+                amount,
             )?;
         }
         LiquidityInstruction::RemoveLiquidity {
-            token_a_amount,
-            token_b_amount,
+            token_address,
+            amount,
         } => {
             remove_liquidity(
                 &liquidity_account,
                 &mut liquidity_params,
-                token_a_amount,
-                token_b_amount,
+                token_address,
+                amount,
             )?;
         }
-        LiquidityInstruction::GetLiquidityAmount => {
-            let liquidity_amount = liquidity_params.get_liquidity_amount();
-            let serialized_data =
-                borsh::to_vec(&liquidity_amount).map_err(|_| ProgramError::Custom(505))?;
-            set_return_data(&serialized_data);
-        }
         LiquidityInstruction::SwapTokens {
-            token_a_amount,
-            min_token_b_amount,
+            token_in_address,
+            token_out_address,
+            amount,
         } => {
             swap_tokens(
                 &liquidity_account,
                 &mut liquidity_params,
-                token_a_amount,
-                min_token_b_amount,
+                token_in_address,
+                token_out_address,
+                amount,
             )?;
         }
         LiquidityInstruction::StakeTokens { stake_amount } => {

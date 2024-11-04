@@ -7,58 +7,44 @@ use log::{info, error}; // Use the log crate for structured logging
 
 pub fn add_liquidity_to_vault(
     vault: &mut Vault,
-    token_a_amount: u64,
-    token_b_amount: u64,
+    token_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
-    // Directly update vault balances
-    vault.token_a_amount += token_a_amount;
-    vault.token_b_amount += token_b_amount;
+    *vault.token_amounts.entry(token_address).or_insert(0) += amount;
     Ok(())
 }
 
 pub fn remove_liquidity_from_vault(
     vault: &mut Vault,
-    token_a_amount: u64,
-    token_b_amount: u64,
+    token_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
-    if vault.token_a_amount < token_a_amount || vault.token_b_amount < token_b_amount {
+    let token_amount = vault.token_amounts.entry(token_address).or_insert(0);
+    if *token_amount < amount {
         return Err(ProgramError::Custom(507)); // Insufficient liquidity
     }
-    vault.token_a_amount -= token_a_amount;
-    vault.token_b_amount -= token_b_amount;
+    *token_amount -= amount;
     Ok(())
 }
 
 pub fn swap_tokens_in_vault(
     vault: &mut Vault,
-    input_amount: u64,
-    min_output_amount: u64,
-    is_token_a_to_b: bool,
+    token_in_address: Pubkey,
+    token_out_address: Pubkey,
+    amount: u64,
 ) -> Result<u64, ProgramError> {
-    let output_amount = if is_token_a_to_b {
-        calculate_swap_amount(vault.token_a_amount, vault.token_b_amount, input_amount)
-    } else {
-        calculate_swap_amount(vault.token_b_amount, vault.token_a_amount, input_amount)
-    };
+    let token_in_amount = vault.token_amounts.entry(token_in_address).or_insert(0);
+    let token_out_amount = vault.token_amounts.entry(token_out_address).or_insert(0);
 
-    if output_amount < min_output_amount {
+    let swap_amount = calculate_swap_amount(*token_in_amount, *token_out_amount, amount);
+    if swap_amount == 0 {
         return Err(SwapError::SlippageError.into());
     }
 
-    // Additional checks for rate manipulation or extreme market conditions
-    if output_amount > input_amount * 10 {
-        return Err(SwapError::RateManipulation.into());
-    }
+    *token_in_amount += amount;
+    *token_out_amount -= swap_amount;
 
-    if is_token_a_to_b {
-        vault.token_a_amount = vault.token_a_amount.checked_sub(input_amount).ok_or(SwapError::InvalidInput)?;
-        vault.token_b_amount = vault.token_b_amount.checked_add(output_amount).ok_or(SwapError::InvalidInput)?;
-    } else {
-        vault.token_a_amount = vault.token_a_amount.checked_add(output_amount).ok_or(SwapError::InvalidInput)?;
-        vault.token_b_amount = vault.token_b_amount.checked_sub(input_amount).ok_or(SwapError::InvalidInput)?;
-    }
-
-    Ok(output_amount)
+    Ok(swap_amount)
 }
 
 pub fn log_swap_status(vault: &Vault) {

@@ -8,14 +8,10 @@ pub use crate::vault::Vault;
 pub fn add_liquidity(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    token_b_amount: u64,
+    token_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
-    //  Update liquidity parameters directly
-    liquidity_params.token_a_amount += token_a_amount;
-    liquidity_params.token_b_amount += token_b_amount;
-    liquidity_params.liquidity_amount = liquidity_params.token_a_amount + liquidity_params.token_b_amount;
-
+    *liquidity_params.token_amounts.entry(token_address).or_insert(0) += amount;
     // Serialize and save updated state
     let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
     liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
@@ -23,74 +19,20 @@ pub fn add_liquidity(
     Ok(())
 }
 
-
 pub fn remove_liquidity(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    token_b_amount: u64,
-    current_time: u64,
+    token_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
-    // Calculate yield before removing liquidity
-    update_yield(liquidity_params, current_time)?;
-
-    let mut liquidity_data = liquidity_account
-        .data
-        .try_borrow_mut()
-        .map_err(|_| ProgramError::Custom(502))?;
-        .try_borrow_mut()
-    // Remove the specified amounts of Token A and Token B from the pool
-    liquidity_params.token_a_amount = liquidity_params
-        .token_a_amount
-        .saturating_sub(token_a_amount);
-    liquidity_params.token_b_amount = liquidity_params
-        .token_b_amount
-        .saturating_sub(token_b_amount);
-        .token_b_amount
-    // Update total liquidity in the pool
-    liquidity_params.liquidity_amount =
-        liquidity_params.token_a_amount + liquidity_params.token_b_amount;
-    liquidity_params.liquidity_amount =
-    // Serialize updated liquidity params back to account data
-    let serialized_data =
-        borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
-    liquidity_data.copy_from_slice(&serialized_data);
-        borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
-    Ok(())
-}
-
-pub fn swap_tokens(
-    liquidity_account: &AccountInfo,
-    liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    min_token_b_amount: u64,
-) -> Result<(), ProgramError> {
-    let mut liquidity_data = liquidity_account
-        .data
-        .try_borrow_mut()
-        .map_err(|_| ProgramError::Custom(502))?;
-
-    // Calculate the amount of Token B that should be received
-    let token_b_amount = calculate_swap_amount(
-        liquidity_params.token_a_amount,
-        liquidity_params.token_b_amount,
-        token_a_amount,
-    );
-
-    if token_b_amount < min_token_b_amount {
-        return Err(ProgramError::Custom(503)); // Slippage protection failed
+    let token_amount = liquidity_params.token_amounts.entry(token_address).or_insert(0);
+    if *token_amount < amount {
+        return Err(ProgramError::Custom(507)); // Insufficient liquidity
     }
-
-    // Update the liquidity pool
-    liquidity_params.token_a_amount += token_a_amount;
-    liquidity_params.token_b_amount -= token_b_amount;
-    liquidity_params.liquidity_amount =
-        liquidity_params.token_a_amount + liquidity_params.token_b_amount;
-
+    *token_amount -= amount;
     // Serialize updated liquidity params back to account data
-    let serialized_data =
-        borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(504))?;
-    liquidity_data.copy_from_slice(&serialized_data);
+    let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
+    liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
 
     Ok(())
 }
@@ -98,39 +40,27 @@ pub fn swap_tokens(
 pub fn swap_tokens(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    min_token_b_amount: u64,
+    token_in_address: Pubkey,
+    token_out_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
-    let mut liquidity_data = liquidity_account
-        .data
-        .try_borrow_mut()
-        .map_err(|_| ProgramError::Custom(502))?;
-        .try_borrow_mut()
-    // Calculate the amount of Token B that should be received
-    let token_b_amount = calculate_swap_amount(
-        liquidity_params.token_a_amount,
-        liquidity_params.token_b_amount,
-        token_a_amount,
-    );
-        token_a_amount,
-    if token_b_amount < min_token_b_amount {
+    let token_in_amount = liquidity_params.token_amounts.entry(token_in_address).or_insert(0);
+    let token_out_amount = liquidity_params.token_amounts.entry(token_out_address).or_insert(0);
+
+    let swap_amount = calculate_swap_amount(*token_in_amount, *token_out_amount, amount);
+    if swap_amount == 0 {
         return Err(ProgramError::Custom(503)); // Slippage protection failed
     }
-        return Err(ProgramError::Custom(503)); // Slippage protection failed
-    // Update the liquidity pool
-    liquidity_params.token_a_amount += token_a_amount;
-    liquidity_params.token_b_amount -= token_b_amount;
-    liquidity_params.liquidity_amount =
-        liquidity_params.token_a_amount + liquidity_params.token_b_amount;
-    liquidity_params.liquidity_amount =
+
+    *token_in_amount += amount;
+    *token_out_amount -= swap_amount;
+
     // Serialize updated liquidity params back to account data
-    let serialized_data =
-        borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(504))?;
-    liquidity_data.copy_from_slice(&serialized_data);
-        borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(504))?;
+    let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(504))?;
+    liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
+
     Ok(())
 }
-
 
 pub fn unstake_tokens(
     reward_account: &AccountInfo,
