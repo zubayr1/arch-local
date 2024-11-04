@@ -10,14 +10,10 @@ pub use crate::state::Vault;
 pub fn add_liquidity(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    token_b_amount: u64,
+    token_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
-    //  Update liquidity parameters directly
-    liquidity_params.token_a_amount += token_a_amount;
-    liquidity_params.token_b_amount += token_b_amount;
-    liquidity_params.liquidity_amount = liquidity_params.token_a_amount + liquidity_params.token_b_amount;
-
+    *liquidity_params.token_amounts.entry(token_address).or_insert(0) += amount;
     // Serialize and save updated state
     let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
     liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
@@ -25,14 +21,22 @@ pub fn add_liquidity(
     Ok(())
 }
 
-
 pub fn remove_liquidity(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    token_b_amount: u64,
-    current_time: u64,
+    token_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
+
+    let token_amount = liquidity_params.token_amounts.entry(token_address).or_insert(0);
+    if *token_amount < amount {
+        return Err(ProgramError::Custom(507)); // Insufficient liquidity
+    }
+    *token_amount -= amount;
+    // Serialize updated liquidity params back to account data
+    let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(503))?;
+    liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
+
     update_yield(liquidity_params, current_time)?;
 
     let mut liquidity_data = liquidity_account
@@ -54,15 +58,37 @@ pub fn remove_liquidity(
         borsh::to_vec(liquidity_params).map_err(|_| ProgramError::Custom(503))?;
     liquidity_data.copy_from_slice(&serialized_data);
 
+
     Ok(())
 }
 
 pub fn swap_tokens(
     liquidity_account: &AccountInfo,
     liquidity_params: &mut LiquidityParams,
-    token_a_amount: u64,
-    min_token_b_amount: u64,
+    token_in_address: Pubkey,
+    token_out_address: Pubkey,
+    amount: u64,
 ) -> Result<(), ProgramError> {
+
+    let token_in_amount = liquidity_params.token_amounts.entry(token_in_address).or_insert(0);
+    let token_out_amount = liquidity_params.token_amounts.entry(token_out_address).or_insert(0);
+
+    let swap_amount = calculate_swap_amount(*token_in_amount, *token_out_amount, amount);
+    if swap_amount == 0 {
+        return Err(ProgramError::Custom(503)); // Slippage protection failed
+    }
+
+    *token_in_amount += amount;
+    *token_out_amount -= swap_amount;
+
+    // Serialize updated liquidity params back to account data
+    let serialized_data = borsh::to_vec(&*liquidity_params).map_err(|_| ProgramError::Custom(504))?;
+    liquidity_account.data.borrow_mut().copy_from_slice(&serialized_data);
+
+    Ok(())
+}
+
+
     let mut liquidity_data = liquidity_account
         .data
         .try_borrow_mut()
@@ -89,6 +115,7 @@ pub fn swap_tokens(
 
     Ok(())
 }
+
 pub fn unstake_tokens(
     reward_account: &AccountInfo,
     reward_params: &mut RewardParams,

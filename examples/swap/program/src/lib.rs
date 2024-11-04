@@ -53,6 +53,87 @@ pub fn process_instruction(
         .map_err(|_| ProgramError::Custom(502))?;
 
     match instruction {
+
+        LiquidityInstruction::AddLiquidity {
+            token_address,
+            amount,
+        } => {
+            add_liquidity(
+                &liquidity_account,
+                &mut liquidity_params,
+                token_address,
+                amount,
+            )?;
+        }
+        LiquidityInstruction::RemoveLiquidity {
+            token_address,
+            amount,
+        } => {
+            remove_liquidity(
+                &liquidity_account,
+                &mut liquidity_params,
+                token_address,
+                amount,
+            )?;
+        }
+        LiquidityInstruction::SwapTokens {
+            token_in_address,
+            token_out_address,
+            amount,
+        } => {
+            swap_tokens(
+                &liquidity_account,
+                &mut liquidity_params,
+                token_in_address,
+                token_out_address,
+                amount,
+            )?;
+        }
+        LiquidityInstruction::StakeTokens { stake_amount } => {
+            let accounts_iter = &mut accounts.iter();
+            let staking_account = next_account_info(accounts_iter)?;
+
+            let mut reward_params = RewardParams::try_from_slice(&staking_account.data.borrow())
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+
+            stake_tokens(staking_account, &mut reward_params, stake_amount)?;
+
+            reward_params
+                .serialize(&mut &mut staking_account.data.borrow_mut()[..])
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+        }
+        LiquidityInstruction::UnstakeTokens { unstake_amount } => {
+            let accounts_iter = &mut accounts.iter();
+            let staking_account = next_account_info(accounts_iter)?;
+
+            let mut reward_params = RewardParams::try_from_slice(&staking_account.data.borrow())
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+
+            unstake_tokens(staking_account, &mut reward_params, unstake_amount)?;
+
+            reward_params
+                .serialize(&mut &mut staking_account.data.borrow_mut()[..])
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+        }
+        LiquidityInstruction::ClaimRewards => {
+            let accounts_iter = &mut accounts.iter();
+            let staking_account = next_account_info(accounts_iter)?;
+
+            let mut reward_params = RewardParams::try_from_slice(&staking_account.data.borrow())
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+
+            let reward_amount = claim_rewards(staking_account, &mut reward_params)?;
+
+            reward_params
+                .serialize(&mut &mut staking_account.data.borrow_mut()[..])
+                .map_err(|_| ProgramError::InvalidAccountData)?;
+        }
+        LiquidityInstruction::OptimizedTradingRoute => {
+            let accounts_iter = &mut accounts.iter();
+            let staking_account = next_account_info(accounts_iter)?;
+
+            let mut reward_params = RewardParams::try_from_slice(&staking_account.data.borrow())
+                .map_err(|_| ProgramError::InvalidAccountData)?;
         LiquidityInstruction::AddLiquidity { token_a_amount, token_b_amount } => {
             let mut liquidity_params = LiquidityParams::deserialize(&mut &liquidity_account.data.borrow()[..])
                 .map_err(|_| ProgramError::Custom(503))?;
