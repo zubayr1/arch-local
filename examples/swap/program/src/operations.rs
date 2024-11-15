@@ -242,14 +242,12 @@ pub struct LimitOrder {
 }
 
 
-
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub enum OrderStatus {
     Open,
     Executed,
-    Cancelled,
+    Cancelled
 }
-
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub enum OrderType {
     Buy,
