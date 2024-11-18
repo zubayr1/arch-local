@@ -8,12 +8,6 @@ pub fn calculate_swap_amount(token_a_amount: u64, token_b_amount: u64, input_amo
     let output_amount = 
         Wrapping(token_b_amount) - (k / (Wrapping(token_a_amount) + input_amount_wrapping));
     
-    // Debug statements for tracking values
-    println!("Token A Reserve: {}, Token B Reserve: {}", token_a_amount, token_b_amount);
-    println!("Input Amount: {}, Rate Adjustment: {}", input_amount, rate_adjustment);
-    println!("Constant Product (k): {}", k.0);
-    println!("Output Amount: {}", output_amount.0);
-
     output_amount.0
 }
 
